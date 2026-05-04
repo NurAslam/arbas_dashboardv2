@@ -16,6 +16,8 @@ import folium
 from streamlit_folium import st_folium
 import struct
 import warnings
+import matplotlib.pyplot as plt
+import seaborn as sns
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -413,7 +415,7 @@ st.sidebar.caption(f"Rows: {len(df)} | Outlets: {df['customer_id'].nunique()}")
 st.title("🧠 Arbas Behavior Analytics")
 st.markdown("""
 <div style="background: linear-gradient(135deg, #2E86AB 0%, #2ECC71 100%); color:white; padding:1.2rem 2rem; border-radius:12px; margin-bottom:1.5rem;">
-  <h2 style="margin:0; color:white;">Outlet • Channel • Market • Repeat Patterns</h2>
+  <h2 style="margin:0; color:white;">Outlet • Channel • Market • Product • Repeat Patterns</h2>
   <p style="margin:0.3rem 0 0; opacity:0.85;">Behavioral Analytics Dashboard | {start} → {end}</p>
 </div>
 """.format(start=df['transaction_date'].min().date(), end=df['transaction_date'].max().date()), unsafe_allow_html=True)
@@ -442,6 +444,7 @@ page = st.radio(
         "📊 Channel Behavior",
         "🗺️ Market Geography",
         "👤 Market-Sales Patterns",
+        "📦 Product Analytics",
         "🔁 Repeat Order Analytics",
         "💡 Insights & Actions",
     ],
@@ -2111,6 +2114,302 @@ elif page == "🔁 Repeat Order Analytics":
     rp_chan_sum.columns = ['Channel','#Outlets','Repeat Buyers','Avg Interval','Avg Days Since','Repeat %']
     st.markdown("**📋 Repeat Summary by Channel**")
     st.dataframe(rp_chan_sum, use_container_width=True, hide_index=True)
+
+# ─────────────────────────────── PRODUCT ANALYTICS ──────────────────────────────
+elif page == "📦 Product Analytics":
+    st.markdown('<div class="section-header">📦 Product Analytics — Best Sellers, Multi-Product, Slow Movers</div>', unsafe_allow_html=True)
+
+    # ── 1. KPI strip ──────────────────────────────────────────────────────
+    prod_all = df['product_name'].nunique()
+    prod_in_trx = df.groupby('product_name')['bill_no'].count()
+    top_prod = prod_in_trx.idxmax()
+    top_prod_trx = prod_in_trx.max()
+
+    kp1, kp2, kp3, kp4, kp5 = st.columns(5)
+    with kp1: st.metric("Total Products", f"{prod_all}")
+    with kp2: st.metric("Most Popular", top_prod[:25])
+    with kp3: st.metric(f"{top_prod[:20]} Trx", f"{top_prod_trx}")
+    with kp4:
+        multi_prods = df.groupby('customer_id')['product_name'].nunique()
+        multi_rate = (multi_prods > 1).mean()*100
+        st.metric("Multi-Product Rate", f"{multi_rate:.0f}%")
+    with kp5:
+        slow_thresh = 2
+        slow_prods = prod_in_trx[prod_in_trx <= slow_thresh]
+        st.metric("Slow Movers (≤2 trx)", f"{len(slow_prods)}")
+
+    st.markdown("---")
+
+    # ── 2. Overall product performance table ───────────────────────────────
+    st.subheader("📋 Product Performance — All Products")
+    prod_overall = df.groupby('product_name').agg(
+        trx=('bill_no','count'),
+        outlets=('customer_id','nunique'),
+        qty=('quantity','sum'),
+        channels=('customer_channel','nunique'),
+        areas=('city_prov','nunique'),
+        salesmen=('salesman_name','nunique')
+    ).reset_index().sort_values('qty', ascending=False)
+    prod_overall['avg_qty_per_trx'] = (prod_overall['qty'] / prod_overall['trx']).round(1)
+    prod_overall['avg_qty_per_outlet'] = (prod_overall['qty'] / prod_overall['outlets']).round(1)
+    prod_overall.columns = ['Product','#Trx','#Outlets','Total Qty','#Channels','#Areas','#Salesmen','Avg Qty/Trx','Avg Qty/Outlet']
+    st.dataframe(prod_overall, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 3. Top & Bottom Products Bar Chart + Tables ──────────────────────
+    st.subheader("🏆 Top 15 Products by Quantity")
+
+    col_t1, col_t2 = st.columns([1,1])
+    with col_t1:
+        prod_top15 = prod_overall.head(15)
+        fig_top = px.bar(
+            prod_top15, x='Product', y='Total Qty',
+            text=prod_top15['Total Qty'].apply(lambda x: f'{x:,}'),
+            color='Total Qty', color_continuous_scale='Greens'
+        )
+        fig_top.update_layout(
+            template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+            font_color='#e6edf3', margin_t=60,
+            xaxis_tickangle=-30,
+            coloraxis_showscale=False
+        )
+        fig_top.update_traces(textposition='outside', marker_line_width=0)
+        st.plotly_chart(fig_top, use_container_width=True)
+        st.markdown("**📋 Top 15 Products Table**")
+        st.dataframe(prod_top15[['Product','#Trx','#Outlets','Total Qty','Avg Qty/Trx','#Channels']], use_container_width=True, hide_index=True)
+
+    with col_t2:
+        prod_bottom = prod_overall.tail(10).sort_values('Total Qty')
+        fig_bot = px.bar(
+            prod_bottom, x='Product', y='Total Qty',
+            text=prod_bottom['Total Qty'].apply(lambda x: f'{x:,}'),
+            color='Total Qty', color_continuous_scale='Reds'
+        )
+        fig_bot.update_layout(
+            template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+            font_color='#e6edf3', margin_t=60,
+            xaxis_tickangle=-30,
+            coloraxis_showscale=False
+        )
+        fig_bot.update_traces(textposition='outside', marker_line_width=0)
+        st.plotly_chart(fig_bot, use_container_width=True)
+        st.markdown("**📋 Bottom 10 Products Table**")
+        st.dataframe(prod_bottom[['Product','#Trx','#Outlets','Total Qty','Avg Qty/Trx','#Channels']], use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 5. Product × Area ────────────────────────────────────────────────
+    st.subheader("🗺️ Product Distribution by Area")
+    area_prod_pivot = df.groupby(['city_prov','product_name'])['quantity'].sum().unstack(fill_value=0)
+    area_prod_pct = area_prod_pivot.div(area_prod_pivot.sum(axis=1), axis=0) * 100
+
+    # Top 10 areas
+    top_areas = df.groupby('city_prov')['bill_no'].count().nlargest(10).index.tolist()
+    area_prod_pct_top = area_prod_pct.loc[top_areas]
+
+    fig_apx, ax_apx = plt.subplots(figsize=(14, 8))
+    sns.heatmap(area_prod_pct_top, annot=True, fmt='.0f', cmap='Oranges',
+                linewidths=0.3, ax=ax_apx, cbar_kws={'label':'% of Area Qty'})
+    ax_apx.set_title('Product Share (%) per Area (Top 10 Areas)', fontsize=13, color='#e6edf3')
+    ax_apx.set_xlabel('Product', color='#e6edf3')
+    ax_apx.set_ylabel('Area', color='#e6edf3')
+    ax_apx.tick_params(colors='#e6edf3')
+    fig_apx.patch.set_facecolor('#0d1117')
+    ax_apx.set_facecolor('#161b22')
+    st.pyplot(fig_apx)
+
+    st.markdown("**📋 Product × Area Table (Top 10 Areas)**")
+    st.dataframe(area_prod_pivot.loc[top_areas].astype(int), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 6. Channel Analysis per Product (Drill-down) ───────────────────
+    st.subheader("🔍 Product Detail — Channel & Area Breakdown")
+
+    sel_prod = st.selectbox("Pilih Product", options=sorted(df['product_name'].unique()), index=0)
+    prod_df = df[df['product_name'] == sel_prod]
+
+    # Channel breakdown
+    pchan = prod_df.groupby('customer_channel').agg(
+        trx=('bill_no','count'),
+        outlets=('customer_id','nunique'),
+        qty=('quantity','sum')
+    ).reset_index().sort_values('qty', ascending=False)
+    pchan['pct_qty'] = (pchan['qty'] / pchan['qty'].sum() * 100).round(1)
+    pchan.columns = ['Channel','#Trx','#Outlets','Total Qty','%Qty']
+
+    c1, c2 = st.columns([1,1])
+    with c1:
+        fig_pchan = px.bar(pchan, x='Channel', y='Total Qty',
+                           text=pchan['Total Qty'].apply(lambda x: f'{x:,}'),
+                           color='Total Qty', color_continuous_scale='Blues')
+        fig_pchan.update_layout(template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+                               font_color='#e6edf3', margin_t=40, coloraxis_showscale=False)
+        fig_pchan.update_traces(textposition='outside')
+        st.plotly_chart(fig_pchan, use_container_width=True)
+
+    with c2:
+        fig_ppct = px.pie(pchan, values='%Qty', names='Channel',
+                          hole=0.45, color_discrete_sequence=px.colors.qualitative.Set2)
+        fig_ppct.update_layout(template='plotly_dark', paper_bgcolor='#0d1117',
+                             font_color='#e6edf3', margin_t=40)
+        st.plotly_chart(fig_ppct, use_container_width=True)
+
+    st.markdown("**📋 Channel Breakdown Table**")
+    st.dataframe(pchan, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # Area breakdown for selected product
+    parea = prod_df.groupby('city_prov').agg(
+        trx=('bill_no','count'),
+        outlets=('customer_id','nunique'),
+        qty=('quantity','sum')
+    ).reset_index().sort_values('qty', ascending=False)
+    parea['pct_qty'] = (parea['qty'] / parea['qty'].sum() * 100).round(1)
+    parea.columns = ['Area','#Trx','#Outlets','Total Qty','%Qty']
+
+    ca1, ca2 = st.columns([1,1])
+    with ca1:
+        fig_parea = px.bar(parea.head(15), x='Area', y='Total Qty',
+                           text=parea['Total Qty'].head(15).apply(lambda x: f'{x:,}'),
+                           color='Total Qty', color_continuous_scale='Oranges')
+        fig_parea.update_layout(template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+                               font_color='#e6edf3', margin_t=40, xaxis_tickangle=-30,
+                               coloraxis_showscale=False)
+        fig_parea.update_traces(textposition='outside')
+        st.plotly_chart(fig_parea, use_container_width=True)
+
+    with ca2:
+        fig_parea_pct = px.pie(parea.head(8), values='%Qty', names='Area',
+                               hole=0.45, color_discrete_sequence=px.colors.qualitative.Pastel1)
+        fig_parea_pct.update_layout(template='plotly_dark', paper_bgcolor='#0d1117',
+                                  font_color='#e6edf3', margin_t=40)
+        st.plotly_chart(fig_parea_pct, use_container_width=True)
+
+    st.markdown("**📋 Area Breakdown Table**")
+    st.dataframe(parea, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 7. Multi-product analysis (outlets buying >1 product) ─────────────
+    st.subheader("🔗 Multi-Product Outlets — Produk apa saja yang dibeli outlet yang sama?")
+
+    multi_outlets = df.groupby('customer_id')['product_name'].nunique()
+    multi_ids = multi_outlets[multi_outlets > 1].index.tolist()
+    multi_df = df[df['customer_id'].isin(multi_ids)]
+
+    # 7a. Tabel per outlet multi-product: channel, area, produk apa aja
+    outlet_prods = multi_df.groupby(['customer_id','customer_channel','city_prov']).agg(
+        num_trx=('bill_no','count'),
+        num_prods=('product_name','nunique'),
+        total_qty=('quantity','sum'),
+        produk_list=('product_name', lambda x: ', '.join(sorted(x.unique())))
+    ).reset_index().sort_values('num_prods', ascending=False)
+
+    st.markdown("**📋 Outlet Multi-Product — Apa saja yang mereka beli?**")
+    st.markdown("*(Setiap baris = 1 outlet. Kolom 'Produk yang Dibeli' menunjukkan SEMUA produk yang dibeli outlet tersebut)*")
+    outlet_prods_disp = outlet_prods[['customer_id','customer_channel','city_prov','num_prods','num_trx','total_qty','produk_list']].copy()
+    outlet_prods_disp.columns = ['Outlet ID','Channel','Area','#Produk','#Trx','Total Qty','Produk yang Dibeli']
+    st.dataframe(outlet_prods_disp, use_container_width=True, hide_index=True)
+
+    # 7b. KPI strip
+    total_multi_outlets = len(multi_ids)
+    avg_prods_per_multi = multi_outlets[multi_ids].mean()
+    kc1, kc2 = st.columns(2)
+    with kc1:
+        st.metric("Total Outlet Multi-Product", f"{total_multi_outlets} outlet")
+    with kc2:
+        st.metric("Rata-rata Produk per Outlet", f"{avg_prods_per_multi:.1f} produk")
+
+    st.markdown("---")
+
+    # 7c. Pasangan produk — paling sering dibeli bersamaan
+    st.subheader("🔗 Pasangan Produk — Paling sering dibeli bersamaan")
+
+    from itertools import combinations
+    pair_list = []
+    for _, row in outlet_prods.iterrows():
+        prods = [p.strip() for p in row['produk_list'].split(',')]
+        for pair in combinations(prods, 2):
+            pair_list.append({'pair': f"{pair[0]} + {pair[1]}", 'outlet': row['customer_id']})
+    pair_df = pd.DataFrame(pair_list)
+    pair_freq = pair_df.groupby('pair').agg(
+        freq=('outlet','count'),
+        outlets_dist=('outlet','nunique')
+    ).reset_index().sort_values('freq', ascending=False)
+
+    pair_split = pair_freq['pair'].str.split(r' \+ ', n=1, expand=True)
+    pair_freq['Produk A'] = pair_split[0]
+    pair_freq['Produk B'] = pair_split[1]
+    pair_freq = pair_freq[['Produk A','Produk B','freq','outlets_dist']]
+    pair_freq.columns = ['Produk A','Produk B','Jumlah Outlet','Outlet Unik']
+    st.markdown("**Contoh baca: 'Cup 120 ML + Cup 240 ML' = ada X outlet yang beli kedua produk ini**")
+    st.dataframe(pair_freq.head(30), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+
+    # ── 10. Product hourly pattern ─────────────────────────────────────────
+    st.subheader("⏰ Product Order Pattern by Hour")
+    prod_hour = df.groupby(['product_name','hour'])['quantity'].sum().reset_index()
+    fig_phour = px.line(prod_hour, x='hour', y='quantity', color='product_name',
+                        markers=True)
+    fig_phour.update_layout(template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+                           font_color='#e6edf3', margin_t=40,
+                           xaxis=dict(tickmode='linear', tick0=0, dtick=1),
+                           legend_title_text='Product')
+    st.plotly_chart(fig_phour, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 11. Salesman × Product ────────────────────────────────────────────
+    st.subheader("👤 Top Salesman per Product")
+
+    sm_prod = df.groupby(['product_name','salesman_name']).agg(
+        trx=('bill_no','count'),
+        qty=('quantity','sum')
+    ).reset_index().sort_values(['product_name','qty'], ascending=[True,False])
+
+    fig_smp = px.treemap(
+        sm_prod[sm_prod['qty'] > 0],
+        path=['product_name','salesman_name'], values='qty',
+        color='product_name', color_discrete_sequence=px.colors.qualitative.Bold
+    )
+    fig_smp.update_layout(template='plotly_dark', paper_bgcolor='#0d1117',
+                          font_color='#e6edf3', margin_t=40,
+                         treemapcolorway=['#2ECC71','#3498db','#e74c3c','#f39c12','#9b59b6'])
+    st.plotly_chart(fig_smp, use_container_width=True)
+
+    st.markdown("**📋 Salesman × Product Table**")
+    st.dataframe(sm_prod, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── 12. Product × Delivery Status ─────────────────────────────────────
+    st.subheader("🚚 Delivery Success Rate per Product")
+
+    pdel = df.groupby(['product_name','delivery_status'])['bill_no'].count().unstack(fill_value=0)
+    if 'DELIVERED' in pdel.columns and len(pdel.columns) > 0:
+        pdel['del_rate'] = (pdel['DELIVERED'] / pdel.sum(axis=1) * 100).round(1)
+        pdel_sorted = pdel.sort_values('del_rate')
+
+        # Dynamically get existing status columns, avoid KeyError
+        existing_cols = [c for c in ['DELIVERED', 'PENDING', 'FAILED'] if c in pdel_sorted.columns]
+        pdel_disp = pdel_sorted[existing_cols + ['del_rate']].fillna(0).astype(int).reset_index()
+        pdel_disp.columns = ['Product'] + [c.capitalize() for c in existing_cols] + ['Del %']
+
+        fig_pdel = px.bar(pdel_disp, x='Product', y='Del %',
+                          text=pdel_disp['Del %'].apply(lambda x: f'{x:.0f}%'),
+                          color='Del %', color_continuous_scale='RdYlGn')
+        fig_pdel.update_layout(template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+                              font_color='#e6edf3', margin_t=40, xaxis_tickangle=-30,
+                              yaxis_range=[0,105], coloraxis_showscale=False)
+        fig_pdel.update_traces(textposition='outside')
+        st.plotly_chart(fig_pdel, use_container_width=True)
+        st.markdown("**📋 Delivery Rate Table**")
+        st.dataframe(pdel_disp, use_container_width=True, hide_index=True)
 
 # ─────────────────────────────── INSIGHTS ─────────────────────────────────────
 elif page == "💡 Insights & Actions":
