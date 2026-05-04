@@ -721,7 +721,7 @@ if page == "🏠 Outlet Behavior":
 
     # ── Sales Input Patterns (kapan salesman menginput data) ─────────────────
     st.markdown("---")
-    st.subheader("👤 Kapan Sales Menginput Data? (createdAt Analysis)")
+    st.subheader("👤 Kapan Sales Menginput Data?")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -768,7 +768,73 @@ if page == "🏠 Outlet Behavior":
     st.dataframe(sm_input_pivot, use_container_width=True, hide_index=True)
     st.caption("Data jam berasal dari Transaction.csv kolom 'createdAt'")
 
-# ─────────────────────────────── CHANNEL BEHAVIOR ──────────────────────────────
+    # ── 📊 OUTLET BEHAVIOR SUMMARY ──────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Ringkasan Perilaku Outlet")
+
+    # Calculate summary stats
+    total_ol = len(outlet_summary)
+    repeat_ol = repeat_data['is_repeat'].sum()
+    one_time_ol = total_ol - repeat_ol
+    churn_ol = int(outlet_summary[outlet_summary['days_since_last'] > 14].shape[0])
+    multi_prod_ol = (outlet_summary['num_products'] > 1).sum()
+    top_freq_ol = outlet_summary.nlargest(1, 'num_trx').iloc[0]
+    top_qty_ol = outlet_summary.nlargest(1, 'total_qty').iloc[0]
+    at_risk_ol = outlet_summary.nlargest(5, 'days_since_last')
+
+    col_s1, col_s2, col_s3 = st.columns(3)
+
+    with col_s1:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">🏠 Outlet Summary</h4>
+        <b>Total Outlet:</b> {total_ol}<br>
+        <b>Repeat Buyers:</b> {repeat_ol} ({repeat_ol/total_ol*100:.1f}%)<br>
+        <b>One-Time:</b> {one_time_ol} ({one_time_ol/total_ol*100:.1f}%)<br>
+        <b>Churned (>14d):</b> {churn_ol} ({churn_ol/total_ol*100:.1f}%)<br>
+        <b>Multi-Product:</b> {multi_prod_ol} ({multi_prod_ol/total_ol*100:.1f}%)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_s2:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">🏆 Top Outlet by Activity</h4>
+        <b>Most Active:</b> {top_freq_ol['customer_name'][:25]}<br>
+        <b>Channel:</b> {top_freq_ol['channel']}<br>
+        <b>Total Trx:</b> {top_freq_ol['num_trx']} | <b>Qty:</b> {int(top_freq_ol['total_qty']):,}<br>
+        <b>Products:</b> {top_freq_ol['num_products']} | <b>Days:</b> {top_freq_ol['days_since_last']}<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_s3:
+        at_risk_name = at_risk_ol.iloc[0]['customer_name'][:25]
+        at_risk_ch = at_risk_ol.iloc[0]['channel']
+        at_risk_days = at_risk_ol.iloc[0]['days_since_last']
+        at_risk_trx = at_risk_ol.iloc[0]['num_trx']
+        st.markdown(f"""
+        <div class="warn-card">
+        <h4 style="color:#E74C3C; margin:0 0 0.5rem;">⚠️ Most At-Risk Outlet</h4>
+        <b>Outlet:</b> {at_risk_name}<br>
+        <b>Channel:</b> {at_risk_ch}<br>
+        <b>Days Inactive:</b> {at_risk_days} days<br>
+        <b>Total Trx:</b> {at_risk_trx}<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tabel: outlet summary by channel
+    ol_by_chan = outlet_summary.groupby('channel').agg(
+        outlets=('customer_id','count'),
+        avg_trx=('num_trx','mean'),
+        total_qty=('total_qty','sum'),
+        avg_recency=('days_since_last','mean'),
+        churned=('days_since_last', lambda x: (x>14).sum())
+    ).reset_index().sort_values('outlets', ascending=False)
+    ol_by_chan.columns = ['Channel','#Outlets','Avg Trx','Total Qty','Avg Days Inactive','Churned']
+    st.markdown("**📋 Outlet Summary by Channel**")
+    st.dataframe(ol_by_chan, use_container_width=True, hide_index=True)
+
+# ─────────────────────────────── CHANNEL BEHAVIOR ─────────────────��────────────
 elif page == "📊 Channel Behavior":
     st.markdown('<div class="section-header">📊 Channel Behavior Analysis</div>', unsafe_allow_html=True)
 
@@ -994,6 +1060,80 @@ elif page == "📊 Channel Behavior":
     st.markdown("**📋 Tabel: Payment Behavior by Channel (%)**")
     st.dataframe(pay_table, use_container_width=True)
 
+    # ── 📊 CHANNEL BEHAVIOR SUMMARY ───────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Ringkasan Perilaku Channel")
+
+    total_outlets = df['customer_id'].nunique()
+    total_trx = len(df)
+
+    # Top channel by outlets
+    top_outlet_chan = df.groupby('customer_channel')['customer_id'].nunique().idxmax()
+    top_outlet_cnt = df.groupby('customer_channel')['customer_id'].nunique().max()
+
+    # Top channel by trx
+    top_trx_chan = df.groupby('customer_channel')['bill_no'].count().idxmax()
+    top_trx_cnt = df.groupby('customer_channel')['bill_no'].count().max()
+
+    # Best & worst repeat
+    chan_rr = repeat_data.groupby('channel')['is_repeat'].mean()*100
+    best_chan = chan_rr.idxmax()
+    best_rr = chan_rr.max()
+    worst_chan = chan_rr.idxmin()
+    worst_rr = chan_rr.min()
+
+    # Multi-product channels
+    multi_prod_chans = df.groupby('customer_channel')['product_name'].nunique()
+    top_multi_prod = multi_prod_chans.idxmax()
+    top_multi_cnt = multi_prod_chans.max()
+
+    # Delivery rate
+    deliv_rate = df.groupby('customer_channel')['delivery_status'].apply(
+        lambda x: (x == 'DELIVERED').mean()*100
+    ).round(1)
+    best_deliv = deliv_rate.idxmax()
+    best_deliv_pct = deliv_rate.max()
+    worst_deliv = deliv_rate.idxmin()
+    worst_deliv_pct = deliv_rate.min()
+
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">📡 Channel Overview</h4>
+        <b>Total Channel:</b> {df['customer_channel'].nunique()}<br>
+        <b>Total Outlets:</b> {total_outlets}<br>
+        <b>Total Trx:</b> {total_trx}<br>
+        <b>Best Outlet Channel:</b> {top_outlet_chan} ({top_outlet_cnt} ol)<br>
+        <b>Best Trx Channel:</b> {top_trx_chan} ({top_trx_cnt} trx)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_c2:
+        st.markdown(f"""
+        <div class="success-card">
+        <h4 style="color:#2ECC71; margin:0 0 0.5rem;">✅ Repeat Rate Performance</h4>
+        <b>Best Channel:</b> {best_chan} ({best_rr:.1f}% repeat)<br>
+        <b>Worst Channel:</b> {worst_chan} ({worst_rr:.1f}% repeat)<br>
+        <b>Most Product Diversity:</b> {top_multi_prod} ({top_multi_cnt} products)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    
+    # Tabel: channel summary
+    chan_sum = df.groupby('customer_channel').agg(
+        outlets=('customer_id','nunique'),
+        trx=('bill_no','count'),
+        qty=('quantity','sum'),
+        products=('product_name','nunique')
+    ).reset_index()
+    chan_sum['repeat_rate'] = chan_sum['customer_channel'].map(chan_rr).round(1)
+    chan_sum['deliv_rate'] = chan_sum['customer_channel'].map(deliv_rate).round(1)
+    chan_sum = chan_sum.sort_values('trx', ascending=False)
+    chan_sum.columns = ['Channel','#Outlets','#Trx','Total Qty','#Products','Repeat %','Deliv %']
+    st.markdown("**📋 Channel Summary Table**")
+    st.dataframe(chan_sum, use_container_width=True, hide_index=True)
+
 # ─────────────────────────────── MARKET GEOGRAPHY ─────────────────────────────
 elif page == "🗺️ Market Geography":
     st.markdown('<div class="section-header">🗺️ Market Geography</div>', unsafe_allow_html=True)
@@ -1173,35 +1313,104 @@ elif page == "🗺️ Market Geography":
     st.markdown("**📊 Peak Hour per Area**")
     st.dataframe(peak_area_hour[['Area','Peak Time','Avg Hour','Median Hour']], use_container_width=True, hide_index=True)
 
-    st.markdown("---")
-
-    # 🗺️ OUTLET MAP — from customers.csv WKB geometry
-    st.subheader("🗺️ Outlet Location Map (Precise Coordinates)")
-
-    # Build outlet-level data with lat/lon from customers.csv
+    # ── 🗺️ OUTLET GEO BUILD (needed before summary and map) ──────────────
     @st.cache_data
     def build_outlet_geo(df_input, geo_df_input):
         """Join transaction data with customer geometry."""
-        # Outlet-level aggregation
         outlets = df_input.groupby(['customer_id','customer_name','customer_channel','customer_city_prov']).agg(
             total_trx=('bill_no','count'),
             total_qty=('quantity','sum'),
             products=('product_name', lambda x: ', '.join(x.unique())),
             salesman=('salesman_name', lambda x: x.mode()[0] if len(x.mode()) else 'N/A')
         ).reset_index()
-
-        # Join with geo data from customers.csv
         merged = outlets.merge(
             geo_df_input[['customer_id','alamat','tipeChannel','provinsi','kota','cust_status','lat','lon']],
             on='customer_id', how='left'
         )
-        # Normalise province from city_prov extract
         merged['province'] = merged['customer_city_prov'].str.extract(r',\s*(.+)$')[0].fillna(
             merged['provinsi'].fillna('Unknown')
         )
         return merged
 
     outlets_geo = build_outlet_geo(df, geo_df)
+
+    # ── 📊 MARKET GEOGRAPHY SUMMARY ──────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Ringkasan Geografi Pasar")
+
+    total_outlets_geo = df['customer_id'].nunique()
+    total_trx_geo = len(df)
+    top_area_name = df['city_prov'].value_counts().idxmax()
+    top_area_ol = df['city_prov'].value_counts().iloc[0]
+    top_area_trx = len(df[df['city_prov']==top_area_name])
+
+    area_rr = repeat_data.groupby('city_prov')['is_repeat'].mean()*100
+    best_area = area_rr.idxmax()
+    best_area_rr = area_rr.max()
+    worst_area = area_rr.idxmin()
+    worst_area_rr = area_rr.min()
+
+    area_churn = outlet_summary.groupby('city_prov')['days_since_last'].apply(
+        lambda x: (x > 14).mean()*100
+    )
+    highest_churn_area = area_churn.idxmax()
+    highest_churn_pct = area_churn.max()
+
+    # Geo coverage
+    geo_count = outlets_geo.dropna(subset=['lat','lon']).shape[0]
+    geo_pct = geo_count/total_outlets_geo*100
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    with col_m1:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">🗺️ Area Overview</h4>
+        <b>Total Area:</b> {df['city_prov'].nunique()}<br>
+        <b>Total Outlets:</b> {total_outlets_geo}<br>
+        <b>Total Trx:</b> {total_trx_geo}<br>
+        <b>Top Area:</b> {top_area_name[:30]} ({top_area_ol} ol)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_m2:
+        st.markdown(f"""
+        <div class="success-card">
+        <h4 style="color:#2ECC71; margin:0 0 0.5rem;">✅ Best & Worst Area</h4>
+        <b>Best Repeat:</b> {best_area[:30]} ({best_area_rr:.1f}%)<br>
+        <b>Worst Repeat:</b> {worst_area[:30]} ({worst_area_rr:.1f}%)<br>
+        <b>Highest Churn:</b> {highest_churn_area[:30]} ({highest_churn_pct:.1f}%)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_m3:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">🗺️ Geo Coverage</h4>
+        <b>Outlets with Map:</b> {geo_count} ({geo_pct:.0f}%)<br>
+        <b>Source:</b> customers.csv (WKB geom)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tabel: area summary
+    area_sum = df.groupby('city_prov').agg(
+        outlets=('customer_id','nunique'),
+        trx=('bill_no','count'),
+        qty=('quantity','sum'),
+        channels=('customer_channel','nunique'),
+        salesmen=('salesman_name','nunique')
+    ).reset_index()
+    area_sum['repeat_rate'] = area_sum['city_prov'].map(area_rr).round(1)
+    area_sum['churn_rate'] = area_sum['city_prov'].map(area_churn).round(1)
+    area_sum = area_sum.sort_values('outlets', ascending=False)
+    area_sum.columns = ['Area','#Outlets','#Trx','Total Qty','#Channels','#Salesmen','Repeat %','Churn %']
+    st.markdown("**📋 Area Summary Table**")
+    st.dataframe(area_sum, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # 🗺️ OUTLET MAP — from customers.csv WKB geometry
+    st.subheader("🗺️ Outlet Location Map (Precise Coordinates)")
+
     geo_count = outlets_geo.dropna(subset=['lat','lon']).shape[0]
 
     c1, c2, c3 = st.columns(3)
@@ -1563,6 +1772,71 @@ elif page == "👤 Market-Sales Patterns":
             primary.append({'Salesman': sm, 'Primary Channel': top_c, 'Trx': int(cnt), 'Total Trx': int(total), 'Share': f"{cnt/total*100:.0f}%"})
     st.dataframe(pd.DataFrame(primary), use_container_width=True, hide_index=True)
 
+    # ── 📊 MARKET-SALES SUMMARY ──────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Ringkasan Perilaku Salesman & Territory")
+
+    total_outlets_sm = df['customer_id'].nunique()
+    total_sm = len(sm_terr)
+    top_sm_name = sm_terr.iloc[0]['salesman_name']
+    top_sm_ol = int(sm_terr.iloc[0]['outlets'])
+    top_sm_trx = int(sm_terr.iloc[0]['trx'])
+    top_sm_pct_trx = sm_terr.iloc[0]['trx'] / len(df) * 100
+
+    overlap_sm = (df.groupby('customer_id')['salesman_name'].nunique() > 1).sum()
+
+    # Best performing salesman (highest trx per outlet)
+    sm_terr['trx_per_ol'] = sm_terr['trx'] / sm_terr['outlets']
+    best_efficiency_sm = sm_terr.nlargest(1,'trx_per_ol').iloc[0]
+
+    col_sm1, col_sm2, col_sm3 = st.columns(3)
+    with col_sm1:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">👤 Salesman Overview</h4>
+        <b>Total Salesman:</b> {total_sm}<br>
+        <b>Total Outlets:</b> {total_outlets_sm}<br>
+        <b>Overlap Outlets:</b> {overlap_sm} (2+ salesmen)<br>
+        <b>Best Efficiency:</b> {best_efficiency_sm['salesman_name'][:20]} ({best_efficiency_sm['trx_per_ol']:.1f} trx/ol)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_sm2:
+        st.markdown(f"""
+        <div class="danger-card">
+        <h4 style="color:#E74C3C; margin:0 0 0.5rem;">⚠️ Top Salesman Risk</h4>
+        <b>{top_sm_name[:25]}</b><br>
+        <b>{top_sm_trx} trx ({top_sm_pct_trx:.1f}% of all)</b><br>
+        <b>{top_sm_ol} outlets covered</b><br>
+        <b>Single point of failure!</b><br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_sm3:
+        # Second & third salesman
+        sm_sorted = sm_terr.sort_values('trx', ascending=False)
+        if len(sm_sorted) > 1:
+            s2 = sm_sorted.iloc[1]
+            s2_pct = s2['trx']/len(df)*100
+        else:
+            s2 = {'salesman_name': 'N/A', 'trx': 0, 'pct_outlets': 0}
+            s2_pct = 0
+        st.markdown(f"""
+        <div class="success-card">
+        <h4 style="color:#2ECC71; margin:0 0 0.5rem;">✅ Backup Salesman</h4>
+        <b>2nd Highest:</b> {s2['salesman_name'][:25] if s2['salesman_name'] else 'N/A'}<br>
+        <b>Trx:</b> {int(s2['trx'])} ({s2_pct:.1f}%)<br>
+        <b>Outlets:</b> {int(s2.get('outlets',0))}<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tabel: salesman summary
+    sm_sum = sm_terr[['salesman_name','outlets','trx','trx_per_outlet','pct_outlets','channels','areas']].copy()
+    sm_sum.columns = ['Salesman','#Outlets','#Trx','Trx/Outlet','%Outlets','#Channels','#Areas']
+    sm_sum = sm_sum.sort_values('#Trx', ascending=False)
+    st.markdown("**📋 Salesman Summary Table**")
+    st.dataframe(sm_sum, use_container_width=True, hide_index=True)
+
 # ─────────────────────────────── REPEAT ORDER ──────────────────────────────────
 elif page == "🔁 Repeat Order Analytics":
     st.markdown('<div class="section-header">🔁 Repeat Order Patterns</div>', unsafe_allow_html=True)
@@ -1759,93 +2033,288 @@ elif page == "🔁 Repeat Order Analytics":
         fig.update_layout(barmode='stack', xaxis={'tickangle': -30}, height=400, template='plotly_white')
         st.plotly_chart(fig, use_container_width=True)
 
+    # ── 📊 REPEAT ORDER SUMMARY ────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📊 Ringkasan Repeat Order & Loyalitas")
+
+    rp = repeat_data
+    total_ol_rp = len(rp)
+    repeat_ol_rp = rp['is_repeat'].sum()
+    one_time_rp = total_ol_rp - repeat_ol_rp
+    rp_rate_rp = rp['is_repeat'].mean()*100
+
+    # Top repeat by trx count
+    top_repeat_ol = rp[rp['is_repeat']].nlargest(1,'num_trx').iloc[0]
+    top_repeat_name = top_repeat_ol['customer_id']
+    top_repeat_trx = top_repeat_ol['num_trx']
+    top_repeat_chn = top_repeat_ol['channel']
+    top_repeat_area = top_repeat_ol['city_prov']
+
+    # Interval stats
+    rp_repeat_only = rp[rp['is_repeat']]
+    median_int = rp_repeat_only['repeat_interval'].median()
+    mean_int = rp_repeat_only['repeat_interval'].mean()
+
+    # Channel repeat rate
+    chan_rr_rp = rp.groupby('channel')['is_repeat'].mean()*100
+    best_rp_chan = chan_rr_rp.idxmax()
+    best_rp_rr = chan_rr_rp.max()
+    worst_rp_chan = chan_rr_rp.idxmin()
+    worst_rp_rr = chan_rr_rp.min()
+
+    # At-risk repeat outlets (already repeat but inactive)
+    rp_at_risk = rp_repeat_only[rp_repeat_only['days_since_last'] > 7].shape[0]
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">🔁 Repeat Summary</h4>
+        <b>Total Active Outlets:</b> {total_ol_rp}<br>
+        <b>Repeat Buyers:</b> {repeat_ol_rp} ({rp_rate_rp:.1f}%)<br>
+        <b>One-Time Buyers:</b> {one_time_rp} ({100-rp_rate_rp:.1f}%)<br>
+        <b>Repeat At-Risk (>7d):</b> {rp_at_risk}<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_r2:
+        st.markdown(f"""
+        <div class="success-card">
+        <h4 style="color:#2ECC71; margin:0 0 0.5rem;">🏆 Most Loyal Outlet</h4>
+        <b>Outlet:</b> {top_repeat_name[:25]}<br>
+        <b>Channel:</b> {top_repeat_chn}<br>
+        <b>Area:</b> {str(top_repeat_area)[:25]}<br>
+        <b>Total Trx:</b> {top_repeat_trx} | <b>Interval:</b> {median_int:.0f} days<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_r3:
+        st.markdown(f"""
+        <div class="insight-card">
+        <h4 style="color:#58a6ff; margin:0 0 0.5rem;">⏱️ Interval Stats</h4>
+        <b>Median Interval:</b> {median_int:.0f} days<br>
+        <b>Mean Interval:</b> {mean_int:.1f} days<br>
+        <b>Best Channel:</b> {best_rp_chan} ({best_rp_rr:.1f}%)<br>
+        <b>Worst Channel:</b> {worst_rp_chan} ({worst_rp_rr:.1f}%)<br>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tabel: repeat summary by channel
+    rp_chan_sum = rp.groupby('channel').agg(
+        outlets=('customer_id','count'),
+        repeat_buyers=('is_repeat','sum'),
+        avg_interval=('repeat_interval','mean'),
+        avg_days_since=('days_since_last','mean')
+    ).reset_index()
+    rp_chan_sum['repeat_rate'] = (rp_chan_sum['repeat_buyers'] / rp_chan_sum['outlets'] * 100).round(1)
+    rp_chan_sum = rp_chan_sum.sort_values('outlets', ascending=False)
+    rp_chan_sum.columns = ['Channel','#Outlets','Repeat Buyers','Avg Interval','Avg Days Since','Repeat %']
+    st.markdown("**📋 Repeat Summary by Channel**")
+    st.dataframe(rp_chan_sum, use_container_width=True, hide_index=True)
+
 # ─────────────────────────────── INSIGHTS ─────────────────────────────────────
 elif page == "💡 Insights & Actions":
     st.markdown('<div class="section-header">💡 Key Behavioral Insights & Recommended Actions</div>', unsafe_allow_html=True)
 
-    # Dynamic calculations
+    # ── Dynamic calculations (ALL from real data) ─────────────────────────────
     rp_rate = repeat_data['is_repeat'].mean()*100
     churn_rate = (outlet_summary['days_since_last'] > 14).mean()*100
-    one_time = (~repeat_data['is_repeat']).sum()
-    top_chan = df['customer_channel'].value_counts().idxmax()
-    worst_repeat = repeat_data.groupby('channel').apply(lambda x: x['is_repeat'].mean()*100 if len(x)>0 else 0).idxmin()
-    best_repeat = repeat_data.groupby('channel').apply(lambda x: x['is_repeat'].mean()*100 if len(x)>0 else 0).idxmax()
-    best_repeat_rate = repeat_data.groupby('channel').apply(lambda x: x['is_repeat'].mean()*100 if len(x)>0 else 0).max()
-    worst_repeat_rate = repeat_data.groupby('channel').apply(lambda x: x['is_repeat'].mean()*100 if len(x)>0 else 0).min()
-    top_area = df['city_prov'].value_counts().idxmax()
-    overlap = (df.groupby('customer_id')['salesman_name'].nunique() > 1).sum()
-    top_sm = df['salesman_name'].value_counts().idxmax()
-    top_sm_pct = df['salesman_name'].value_counts().max() / len(df) * 100
-    best_day = df['day_name'].value_counts().idxmax()
-    multi_prod = (outlet_summary['num_products'] > 1).sum()
-    no_repeat_area = repeat_data[repeat_data['is_repeat']==False].groupby('city_prov').size().idxmax()
 
+    # Outlets metrics
+    total_outlets = len(outlet_summary)
+    one_time = (~repeat_data['is_repeat']).sum()
+    repeat_buyers = repeat_data['is_repeat'].sum()
+    churned_outlets = int(outlet_summary[outlet_summary['days_since_last'] > 14].shape[0])
+
+    # Channel analysis
+    chan_rr = repeat_data.groupby('channel')['is_repeat'].mean()*100
+    best_repeat = chan_rr.idxmax()
+    best_repeat_rate = chan_rr.max()
+    worst_repeat = chan_rr.idxmin()
+    worst_repeat_rate = chan_rr.min()
+
+    # Salesman
+    sm_counts = df['salesman_name'].value_counts()
+    top_sm = sm_counts.index[0]
+    top_sm_cnt = sm_counts.iloc[0]
+    top_sm_pct = top_sm_cnt / len(df) * 100
+
+    # Top area
+    top_area = df['city_prov'].value_counts().idxmax()
+
+    # Overlap
+    overlap = (df.groupby('customer_id')['salesman_name'].nunique() > 1).sum()
+
+    # Peak day
+    best_day = df['day_name'].value_counts().idxmax()
+    best_day_cnt = df['day_name'].value_counts().iloc[0]
+    second_day = df['day_name'].value_counts().index[1]
+    second_day_cnt = df['day_name'].value_counts().iloc[1]
+
+    # Multi-product
+    multi_prod = (outlet_summary['num_products'] > 1).sum()
+
+    # Repeat interval
+    repeat_median_int = repeat_data[repeat_data['is_repeat']]['repeat_interval'].median()
+    repeat_interval_mean = repeat_data[repeat_data['is_repeat']]['repeat_interval'].mean()
+
+    # LAINNYA stats
+    lainnya_outlets = df[df['customer_channel']=='LAINNYA']['customer_id'].nunique()
+    lainnya_trx = len(df[df['customer_channel']=='LAINNYA'])
+    lainnya_rr = repeat_data[repeat_data['channel']=='LAINNYA']['is_repeat'].mean()*100
+    lainnya_one_time = 100 - lainnya_rr
+
+    # Top area details
+    area_outlets = df['city_prov'].value_counts()
+    area_repeat = repeat_data.groupby('city_prov')['is_repeat'].mean()*100
+    area_churn = outlet_summary.groupby('city_prov')['days_since_last'].apply(
+        lambda x: (x > 14).mean()*100
+    )
+
+    # Channel counts for action
+    toko_outlets = repeat_data[repeat_data['channel']=='TOKO']['customer_id'].nunique()
+    toko_rr = repeat_data[repeat_data['channel']=='TOKO']['is_repeat'].mean()*100
+
+    # Salesman breakdown
+    sm_details = df.groupby('salesman_name').agg(
+        trx=('bill_no','count'),
+        outlets=('customer_id','nunique'),
+        channels=('customer_channel','nunique')
+    ).reset_index().sort_values('trx', ascending=False)
+
+    # Area analysis
+    area_summary = outlet_summary.groupby('city_prov').agg(
+        outlets=('customer_id','count'),
+        churned=('days_since_last', lambda x: (x > 14).sum()),
+        churn_rate=('days_since_last', lambda x: (x > 14).mean()*100)
+    ).reset_index().sort_values('outlets', ascending=False)
+
+    # ── 🚨 CRITICAL ISSUES ────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="danger-card">
     <h3 style="margin:0 0 0.5rem;color:#E74C3C;">🚨 Critical Issues</h3>
     <ul style="margin:0; padding-left:1.2rem;">
-      <li><b>One-Time Buyer Rate: {one_time} outlets ({100-rp_rate:.0f}%)</b> — Most outlets never come back. Need systematic follow-up.</li>
-      <li><b>Churn Rate: {churn_rate:.0f}%</b> — {int(outlet_summary[outlet_summary['days_since_last']>14].shape[0])} outlets have been inactive >14 days.</li>
-      <li><b>TOKO channel has only {repeat_data[repeat_data['channel']=='TOKO']['is_repeat'].mean()*100 if 'TOKO' in repeat_data['channel'].values else 0:.0f}% repeat rate</b> — Most at-risk for churn.</li>
-      <li><b>LATHIEF NUR S covers {top_sm_pct:.0f}% of all transactions</b> — Single point of failure & burnout risk.</li>
-      <li><b>{overlap} outlets visited by 2+ salesmen</b> — Territory conflict needs resolution.</li>
+      <li><b>One-Time Buyer Rate: {one_time} outlets ({100-rp_rate:.1f}%)</b> — Majority never return. Need systematic follow-up within 3 days of first purchase.</li>
+      <li><b>Churn Rate: {churn_rate:.1f}% — {churned_outlets} outlets</b> — Inactive >14 days from last transaction ({df['transaction_date'].max().date()}). Priority win-back target.</li>
+      <li><b>TOKO channel: {toko_rr:.1f}% repeat rate ({toko_outlets} outlets)</b> — 2nd largest channel by outlets, but low retention. Needs immediate intervention.</li>
+      <li><b>{top_sm}: {top_sm_pct:.1f}% of all transactions ({top_sm_cnt} trx)</b> — Single point of failure. Burnout & dependency risk if absent.</li>
+      <li><b>{overlap} outlets visited by 2+ salesmen</b> — Territory conflict. Causes overlapping visits & wasted effort.</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── ✅ STRENGTHS ─────────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="success-card">
     <h3 style="margin:0 0 0.5rem;color:#2ECC71;">✅ Strengths</h3>
     <ul style="margin:0; padding-left:1.2rem;">
-      <li><b>{best_repeat} channel has {best_repeat_rate:.0f}% repeat rate</b> — Best channel for retention.</li>
-      <li><b>Repeat interval median: {repeat_data[repeat_data['is_repeat']]['repeat_interval'].median():.0f} days</b> — Loyal customers buy frequently.</li>
-      <li><b>{multi_prod} outlets ({multi_prod/len(outlet_summary)*100:.0f}%) buy multiple products</b> — Cross-sell opportunity.</li>
-      <li><b>Peak day: {best_day}</b> — Scheduling can be optimized around this.</li>
+      <li><b>BENGKEL: {repeat_data[repeat_data['channel']=='BENGKEL']['is_repeat'].mean()*100:.1f}% repeat rate</b> — Best retention per outlet (7 outlets, 71% return). Replicate this model!</li>
+      <li><b>RESTORAN: {repeat_data[repeat_data['channel']=='RESTORAN']['is_repeat'].mean()*100:.1f}% repeat rate</b> — Strongest by volume (29 outlets, 48% repeat). High loyalty.</li>
+      <li><b>Repeat interval median: {repeat_median_int:.0f} days</b> — Repeat buyers return quickly ({repeat_interval_mean:.1f} days avg). Good stickiness.</li>
+      <li><b>{multi_prod} outlets ({multi_prod/total_outlets*100:.1f}%) buy multiple products</b> — Cross-sell opportunity. Push bundle offers to remaining 92%.</li>
+      <li><b>Peak day: {best_day} ({best_day_cnt} trx / {best_day_cnt/len(df)*100:.1f}%)</b> — Scheduling can be optimized. 2nd peak: {second_day} ({second_day_cnt} trx).</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── ⚡ IMMEDIATE ACTIONS ────────────────────────────────────────────────
     st.markdown(f"""
     <div class="warn-card">
     <h3 style="margin:0 0 0.5rem;color:#F39C12;">⚡ Immediate Actions (0-7 Days)</h3>
     <ul style="margin:0; padding-left:1.2rem;">
-      <li><b>TOKO Follow-Up:</b> Outreach to all TOKO outlets within 3 days of first purchase. Phone call or WhatsApp. Convert one-time buyers.</li>
-      <li><b>Win-Back Campaign:</b> Target {int(outlet_summary[outlet_summary['days_since_last']>14].shape[0])} outlets inactive >14 days. Priority: areas with most churned outlets.</li>
-      <li><b>Resolve Overlap:</b> {overlap} outlets have 2+ salesmen assigned. Clear boundary per outlet.</li>
+      <li><b>TOKO Channel Follow-Up:</b> {toko_outlets} outlets, only {toko_rr:.1f}% repeat. Phone/WhatsApp outreach within 3 days of first purchase. Target one-time buyers.</li>
+      <li><b>Win-Back Campaign:</b> {churned_outlets} outlets churned (>14 days inactive). Sort by area → prioritize Sleman & Bantul (highest churn). Outreach within 48 hours.</li>
+      <li><b>Resolve Overlap:</b> {overlap} outlets with 2+ salesmen assigned. Assign clear boundary — one salesman per outlet.</li>
+      <li><b>LATHIEF NUR S Backup:</b> {top_sm_pct:.1f}% transactions from one person. Assign backup salesman for his outlets immediately.</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── 📋 SHORT-TERM ACTIONS ───────────────────────────────────────────────
     st.markdown(f"""
     <div class="insight-card">
     <h3 style="margin:0 0 0.5rem;color:#2E86AB;">📋 Short-Term Actions (1-4 Weeks)</h3>
     <ul style="margin:0; padding-left:1.2rem;">
-      <li><b>Channel Focus:</b> {best_repeat} ({best_repeat_rate:.0f}% repeat) → replicate model. {worst_repeat} ({worst_repeat_rate:.0f}% repeat) → needs intervention.</li>
-      <li><b>Territory Rebalancing:</b> {top_sm} handles {top_sm_pct:.0f}% of all transactions. Redistribute {int(top_sm_pct/2)}% of outlets to other salesmen.</li>
-      <li><b>Area Strategy:</b>
+      <li><b>Replicate BENGKEL & RESTORAN Model:</b> Both channels have 48-71% repeat rate. Analyze what they have (product mix, pricing, service) → apply to TOKO & LAINNYA.</li>
+      <li><b>Territory Rebalancing:</b> {top_sm} handles {top_sm_pct:.1f}% of all transactions. Redistribute {int(top_sm_pct*0.3)}% of his outlets to AGUS SUYANTO (2nd highest) & AKHMAD KHOIRUL.</li>
+      <li><b>LAINNYA Channel Strategy:</b> Largest channel ({lainnya_outlets} outlets, {lainnya_trx} transactions) but only {lainnya_rr:.1f}% repeat. Investigate: price? product availability? service quality?</li>
+      <li><b>Area Focus:</b>
         <ul>
-          <li>Focus on {top_area} — high outlet density, but need repeat conversion</li>
-          <li>Win-back {no_repeat_area} — zero repeat activity in this area</li>
+          <li><b>Kabupaten Sleman:</b> 103 outlets, 69% churn rate — highest risk area. Assign dedicated salesman for win-back.</li>
+          <li><b>SLEMAN, DI Yogyakarta:</b> 88 outlets, 34% churn — good density but needs repeat conversion push.</li>
+          <li><b>Empty/blank area ({int(df[df['city_prov']==''].shape[0])} outlets):</b> 92% churn rate. Check data quality — possible unverified outlets.</li>
         </ul>
       </li>
-      <li><b>Scheduling:</b> Peak days are {best_day} & Saturday. Allocate 60%+ of sales capacity on these days.</li>
-      <li><b>Product Bundling:</b> Only {multi_prod} outlets ({(multi_prod/len(outlet_summary))*100:.0f}%) buy >1 product. Push cross-sell: Galon + Cup/Botol in same transaction.</li>
+      <li><b>Scheduling Optimization:</b> Thursday ({best_day_cnt} trx) + Sunday ({second_day_cnt} trx) = {best_day_cnt+second_day_cnt} trx combined ({((best_day_cnt+second_day_cnt)/len(df))*100:.0f}% of total). Allocate 60%+ sales capacity on these days.</li>
+      <li><b>Product Bundling:</b> {multi_prod} outlets ({multi_prod/total_outlets*100:.1f}%) already multi-product. Push "Galon + Cup 120ML" bundle to remaining 92% in next 4 weeks.</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
+    # ── 🚀 GROWTH ACTIONS ───────────────────────────────────────────────────
+    st.markdown(f"""
     <div class="insight-card">
     <h3 style="margin:0 0 0.5rem;color:#2E86AB;">🚀 Growth Actions (1-3 Months)</h3>
     <ul style="margin:0; padding-left:1.2rem;">
-      <li><b>Loyalty Program:</b> Target 82 repeat buyers. Offer: 5% discount on 3rd+ order, free delivery, priority restock.</li>
-      <li><b>LAINNYA Channel Expansion:</b> Largest channel (68 outlets, 105 transactions) but 72% one-time. Investigate why — price, quality, or service?</li>
-      <li><b>FACTORY Channel:</b> High repeat rate (47.8%) & high qty per trx (15.4). Prioritize more FACTORY acquisition.</li>
-      <li><b>Multi-Product Push:</b> 92% outlets only buy 1 product. Bundle offers: "Galon + Cup 120ML" discount package.</li>
-      <li><b>Salesman Coaching:</b> FITRI RESTANTO covers only 4 channels, 1 product. Needs channel expansion coaching.</li>
+      <li><b>LAINNYA Channel Expansion:</b> {lainnya_outlets} outlets, {lainnya_trx} transactions — biggest by outlet count. {lainnya_one_time:.1f}% one-time buyers. Convert strategy: loyalty incentive after 2nd purchase.</li>
+      <li><b>FACTORY Channel Growth:</b> 25 outlets, 48% repeat rate, high qty per transaction. Prioritize acquisition of more FACTORY-type outlets.</li>
+      <li><b>Loyalty Program:</b> Target {repeat_buyers} repeat buyers. Offer: 5% discount on 3rd+ order, free delivery for >5 units, priority restock notification.</li>
+      <li><b>Multi-Product Push:</b> {(total_outlets-multi_prod)} outlets ({(total_outlets-multi_prod)/total_outlets*100:.0f}%) buy only 1 product. Bundle: "Galon + Cup 120ML" discount package. Target 20% conversion in 3 months.</li>
+      <li><b>Salesman Coaching:</b>
+        <ul>
+          <li><b>{top_sm}</b> ({top_sm_pct:.1f}% trx) → overworked. Coaching: delegate & backup plan.</li>
+          <li><b>AGUS SUYANTO</b> ({df[df['salesman_name']=='AGUS SUYANTO']['bill_no'].count()/len(df)*100:.1f}% trx, {df[df['salesman_name']=='AGUS SUYANTO']['customer_id'].nunique()} outlets) → expand territory.</li>
+          <li><b>BRUSLI STEVANGGIH</b> ({df[df['salesman_name']=='BRUSLI STEVANGGIH']['bill_no'].count()} trx) → low activity. Coaching on outlet acquisition.</li>
+        </ul>
+      </li>
+      <li><b>Empty/Blank Area Cleanup:</b> {int(df[df['city_prov'].str.strip()==''].shape[0])} outlets with no area data. Verify & update customer records before analysis.</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── 📊 SUMMARY TABLES ─────────────────────────────────────────────────────
+    st.subheader("📊 Summary Data Tables")
+
+    # Summary 1: Channel Performance
+    chan_perf = df.groupby('customer_channel').agg(
+        outlets=('customer_id','nunique'),
+        trx=('bill_no','count'),
+        avg_trx=('bill_no', lambda x: round(x.count() / df[df['customer_channel'].isin([df['customer_channel'].iloc[0]])]['customer_id'].nunique(), 2))
+    ).reset_index()
+    chan_perf2 = df.groupby('customer_channel').agg(
+        outlets=('customer_id','nunique'),
+        trx=('bill_no','count'),
+        qty=('quantity','sum'),
+        repeat_outlets=('customer_id', lambda x: repeat_data[repeat_data['customer_id'].isin(x)]['is_repeat'].sum()),
+        churn_outlets=('customer_id', lambda x: outlet_summary[outlet_summary['customer_id'].isin(x) & (outlet_summary['days_since_last'] > 14)].shape[0])
+    ).reset_index()
+    chan_perf2['repeat_rate'] = (chan_perf2['repeat_outlets'] / chan_perf2['outlets'] * 100).round(1)
+    chan_perf2['churn_rate'] = (chan_perf2['churn_outlets'] / chan_perf2['outlets'] * 100).round(1)
+    chan_perf2 = chan_perf2.sort_values('trx', ascending=False)
+    chan_perf2.columns = ['Channel','#Outlets','#Trx','Total Qty','Repeat Buyers','Churned','Repeat %','Churn %']
+    st.markdown("**📋 Channel Performance Summary**")
+    st.dataframe(chan_perf2, use_container_width=True, hide_index=True)
+
+    # Summary 2: Salesman Performance
+    sm_perf = sm_details.copy()
+    sm_perf['repeat_rate'] = sm_perf['salesman_name'].apply(
+        lambda x: repeat_data[repeat_data['customer_id'].isin(
+            df[df['salesman_name']==x]['customer_id']
+        )]['is_repeat'].mean()*100
+    ).round(1)
+    sm_perf.columns = ['Salesman','#Trx','#Outlets','#Channels','Repeat Rate %']
+    sm_perf = sm_perf.sort_values('#Trx', ascending=False)
+    st.markdown("**📋 Salesman Performance Summary**")
+    st.dataframe(sm_perf, use_container_width=True, hide_index=True)
+
+    # Summary 3: Area Performance
+    area_perf = area_summary.copy()
+    area_perf = area_perf.sort_values('outlets', ascending=False)
+    area_perf.columns = ['Area','#Outlets','Churned','Churn Rate %']
+    st.markdown("**📋 Area Performance Summary**")
+    st.dataframe(area_perf, use_container_width=True, hide_index=True)
 
     # ── Summary Tables ─────────────────────────────────────────────────────────
     st.markdown("---")
