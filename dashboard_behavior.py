@@ -2117,7 +2117,7 @@ elif page == "🔁 Repeat Order Analytics":
 
 # ─────────────────────────────── PRODUCT ANALYTICS ──────────────────────────────
 elif page == "📦 Product Analytics":
-    st.markdown('<div class="section-header">📦 Product Analytics — Best Sellers, Multi-Product, Slow Movers</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📦 Product Analytics — Best Sellers, Multi-Product</div>', unsafe_allow_html=True)
 
     # ── 1. KPI strip ──────────────────────────────────────────────────────
     prod_all = df['product_name'].nunique()
@@ -2125,7 +2125,7 @@ elif page == "📦 Product Analytics":
     top_prod = prod_in_trx.idxmax()
     top_prod_trx = prod_in_trx.max()
 
-    kp1, kp2, kp3, kp4, kp5 = st.columns(5)
+    kp1, kp2, kp3, kp4 = st.columns(4)
     with kp1: st.metric("Total Products", f"{prod_all}")
     with kp2: st.metric("Most Popular", top_prod[:25])
     with kp3: st.metric(f"{top_prod[:20]} Trx", f"{top_prod_trx}")
@@ -2133,11 +2133,7 @@ elif page == "📦 Product Analytics":
         multi_prods = df.groupby('customer_id')['product_name'].nunique()
         multi_rate = (multi_prods > 1).mean()*100
         st.metric("Multi-Product Rate", f"{multi_rate:.0f}%")
-    with kp5:
-        slow_thresh = 2
-        slow_prods = prod_in_trx[prod_in_trx <= slow_thresh]
-        st.metric("Slow Movers (≤2 trx)", f"{len(slow_prods)}")
-
+    
     st.markdown("---")
 
     # ── 2. Overall product performance table ───────────────────────────────
@@ -2157,48 +2153,39 @@ elif page == "📦 Product Analytics":
 
     st.markdown("---")
 
-    # ── 3. Top & Bottom Products Bar Chart + Tables ──────────────────────
-    st.subheader("🏆 Top 15 Products by Quantity")
+    # ── 3. Top 20 Products by Quantity ─────────────────────────────────
+    st.subheader("🏆 Top 20 Products by Quantity")
 
-    col_t1, col_t2 = st.columns([1,1])
-    with col_t1:
-        prod_top15 = prod_overall.head(15)
-        fig_top = px.bar(
-            prod_top15, x='Product', y='Total Qty',
-            text=prod_top15['Total Qty'].apply(lambda x: f'{x:,}'),
-            color='Total Qty', color_continuous_scale='Greens'
-        )
-        fig_top.update_layout(
-            template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
-            font_color='#e6edf3', margin_t=60,
-            xaxis_tickangle=-30,
-            coloraxis_showscale=False
-        )
-        fig_top.update_traces(textposition='outside', marker_line_width=0)
-        st.plotly_chart(fig_top, use_container_width=True)
-        st.markdown("**📋 Top 15 Products Table**")
-        st.dataframe(prod_top15[['Product','#Trx','#Outlets','Total Qty','Avg Qty/Trx','#Channels']], use_container_width=True, hide_index=True)
+    prod_rank = prod_overall.copy()
+    prod_rank['Rank'] = range(1, len(prod_rank) + 1)
+    prod_rank['Label'] = prod_rank['Rank'].apply(lambda x: f"#{x}")
 
-    with col_t2:
-        prod_bottom = prod_overall.tail(10).sort_values('Total Qty')
-        fig_bot = px.bar(
-            prod_bottom, x='Product', y='Total Qty',
-            text=prod_bottom['Total Qty'].apply(lambda x: f'{x:,}'),
-            color='Total Qty', color_continuous_scale='Reds'
-        )
-        fig_bot.update_layout(
-            template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
-            font_color='#e6edf3', margin_t=60,
-            xaxis_tickangle=-30,
-            coloraxis_showscale=False
-        )
-        fig_bot.update_traces(textposition='outside', marker_line_width=0)
-        st.plotly_chart(fig_bot, use_container_width=True)
-        st.markdown("**📋 Bottom 10 Products Table**")
-        st.dataframe(prod_bottom[['Product','#Trx','#Outlets','Total Qty','Avg Qty/Trx','#Channels']], use_container_width=True, hide_index=True)
+    fig_rank = px.bar(
+        prod_rank.head(20), x='Label', y='Total Qty',
+        text=prod_rank.head(20)['Total Qty'].apply(lambda x: f'{x:,}'),
+        color='Total Qty', color_continuous_scale='Greens',
+        hover_data={'Label': True, 'Product': True, '#Trx': True,
+                     '#Outlets': True, 'Avg Qty/Trx': True, '#Channels': True}
+    )
+    fig_rank.update_layout(
+        template='plotly_dark', paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+        font_color='#e6edf3', margin_t=40,
+        xaxis_title='Ranking', yaxis_title='Total Quantity',
+        coloraxis_showscale=False
+    )
+    fig_rank.update_traces(marker_line_width=0)
+    st.plotly_chart(fig_rank, use_container_width=True)
+
+    # Tabel ranking lengkap + highlight bottom 5 merah
+    st.markdown("**📋 Product Ranking — Top to Bottom**")
+    st.markdown("_Kolom Ranking: #1 = paling laris, semakin besar nomor = semakin jarang dibeli_")
+
+    disp_rank = prod_rank[['Rank','Product','#Trx','#Outlets','Total Qty','Avg Qty/Trx','Avg Qty/Outlet','#Channels']].copy()
+    st.dataframe(disp_rank, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
+    
     # ── 5. Product × Area ────────────────────────────────────────────────
     st.subheader("🗺️ Product Distribution by Area")
     area_prod_pivot = df.groupby(['city_prov','product_name'])['quantity'].sum().unstack(fill_value=0)
@@ -2343,8 +2330,8 @@ elif page == "📦 Product Analytics":
     pair_split = pair_freq['pair'].str.split(r' \+ ', n=1, expand=True)
     pair_freq['Produk A'] = pair_split[0]
     pair_freq['Produk B'] = pair_split[1]
-    pair_freq = pair_freq[['Produk A','Produk B','freq','outlets_dist']]
-    pair_freq.columns = ['Produk A','Produk B','Jumlah Outlet','Outlet Unik']
+    pair_freq = pair_freq[['Produk A','Produk B','freq']]
+    pair_freq.columns = ['Produk A','Produk B','Jumlah Outlet']
     st.markdown("**Contoh baca: 'Cup 120 ML + Cup 240 ML' = ada X outlet yang beli kedua produk ini**")
     st.dataframe(pair_freq.head(30), use_container_width=True, hide_index=True)
 
