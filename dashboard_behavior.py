@@ -2206,11 +2206,6 @@ elif page == "📦 Product Analytics":
     ax_apx.set_facecolor('#161b22')
     st.pyplot(fig_apx)
 
-    st.markdown("**📋 Product × Area Table (Top 10 Areas)**")
-    st.dataframe(area_prod_pivot.loc[top_areas].astype(int), use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-
     # ── 6. Channel Analysis per Product (Drill-down) ───────────────────
     st.subheader("🔍 Product Detail — Channel & Area Breakdown")
 
