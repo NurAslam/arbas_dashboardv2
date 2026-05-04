@@ -1,0 +1,40 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files (optional — comment out if you want to track outputs)
+behavior_*.csv
+churned_outlets.csv
+executive_summary.csv
+repeat_order_customers.csv
+rfm_segments.csv
+sales_performance.csv
+behavior_output.txt
+bx1tfew0e.txt
+
+# Large files (optional — add if needed)
+# *.csv
